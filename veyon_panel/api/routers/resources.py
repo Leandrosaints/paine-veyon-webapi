@@ -7,9 +7,10 @@ from veyon_panel.core.config import VEYON_API_URL
 from veyon_panel.db.session import get_db
 from veyon_panel.models.resources import Computer, Environment
 from veyon_panel.schemas.resources import (
-    ComputerCreate, ComputerRead, ComputerUpdate,
+    ComputerCreate, ComputerCredentials, ComputerRead, ComputerUpdate,
     EnvironmentCreate, EnvironmentRead, EnvironmentUpdate,
 )
+from veyon_panel.core.secrets import encrypt_credentials
 
 router = APIRouter(tags=["Ambientes e computadores"])
 
@@ -108,6 +109,29 @@ def update_computer(computer_id: int, body: ComputerUpdate, db: Session = Depend
         raise HTTPException(409, "Já existe um computador cadastrado com esse host.") from exc
     db.refresh(item)
     return item
+
+
+@router.put("/computers/{computer_id}/credentials", response_model=ComputerRead)
+def save_computer_credentials(computer_id: int, body: ComputerCredentials, db: Session = Depends(get_db)):
+    item = db.get(Computer, computer_id)
+    if item is None:
+        raise HTTPException(404, "Computador não encontrado.")
+    item.auth_method = body.method
+    item.credentials_encrypted = encrypt_credentials(body.credentials)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@router.delete("/computers/{computer_id}/credentials", status_code=204)
+def delete_computer_credentials(computer_id: int, db: Session = Depends(get_db)):
+    item = db.get(Computer, computer_id)
+    if item is None:
+        raise HTTPException(404, "Computador não encontrado.")
+    item.auth_method = None
+    item.credentials_encrypted = None
+    db.commit()
+    return Response(status_code=204)
 
 
 @router.delete("/computers/{computer_id}", status_code=204)

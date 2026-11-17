@@ -31,6 +31,12 @@ class Computer(Base):
     )
     api_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    auth_method: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    credentials_encrypted: Mapped[str | None] = mapped_column(String, nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     environment: Mapped[Environment | None] = relationship(back_populates="computers")
+
+    @property
+    def has_credentials(self) -> bool:
+        return bool(self.credentials_encrypted)

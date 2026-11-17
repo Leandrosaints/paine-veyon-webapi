@@ -52,8 +52,13 @@ class ComputerRead(BaseModel):
     environment_id: int | None
     api_url: str | None
     notes: str | None
+    has_credentials: bool = False
     sort_order: int
     created_at: datetime | None = None
 
     class Config:
         orm_mode = True
+
+class ComputerCredentials(BaseModel):
+    method: str = Field(min_length=1, max_length=64)
+    credentials: dict

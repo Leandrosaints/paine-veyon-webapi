@@ -2,11 +2,15 @@ import secrets
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 from veyon_panel.core.config import VEYON_API_URL, VEYON_AUTH_METHOD
+from veyon_panel.core.secrets import decrypt_credentials
+from veyon_panel.db.session import get_db
+from veyon_panel.models.resources import Computer
 from veyon_panel.services.veyon import api_base_url, host_path, payload, request
 
 router = APIRouter(tags=["Veyon WebAPI"])
@@ -41,21 +45,36 @@ def connection_or_401(connection_id: str) -> Connection:
 
 @router.get("/authentication/{host}/methods")
 async def authentication_methods(host: str, base_url: str | None = None):
-    return payload(await request(api_base_url(base_url, VEYON_API_URL), "GET", host_path(host)))
+    return payload(await request(api_base_url(base_url, VEYON_API_URL), "GET", host_path(host), timeout=4))
 
 
 @router.post("/connections")
 async def authenticate(body: AuthRequest):
-    base = api_base_url(body.base_url, VEYON_API_URL)
-    data = payload(await request(base, "POST", host_path(body.host),
-                                 json={"method": body.method, "credentials": body.credentials}))
+    return await create_connection(body.host, body.method, body.credentials, body.base_url)
+
+
+async def create_connection(host: str, method: str, credentials: dict[str, Any], base_url: str | None):
+    base = api_base_url(base_url, VEYON_API_URL)
+    data = payload(await request(base, "POST", host_path(host),
+                                 json={"method": method, "credentials": credentials}))
     uid = data.get("connection-uid") if isinstance(data, dict) else None
     if not uid:
         raise HTTPException(502, {"message": "Resposta sem connection-uid", "response": data})
     connection_id = secrets.token_urlsafe(24)
-    connections[connection_id] = Connection(base, body.host, uid, data.get("validUntil"))
-    return {"connection_id": connection_id, "host": body.host,
+    connections[connection_id] = Connection(base, host, uid, data.get("validUntil"))
+    return {"connection_id": connection_id, "host": host,
             "validUntil": data.get("validUntil"), "connection-uid": uid}
+
+
+@router.post("/connections/computer/{computer_id}")
+async def authenticate_saved_computer(computer_id: int, db: Session = Depends(get_db)):
+    computer = db.get(Computer, computer_id)
+    if computer is None:
+        raise HTTPException(404, "Computador não encontrado.")
+    if not computer.auth_method or not computer.credentials_encrypted:
+        raise HTTPException(409, "Este computador não tem credenciais salvas.")
+    credentials = decrypt_credentials(computer.credentials_encrypted)
+    return await create_connection(computer.host, computer.auth_method, credentials, computer.api_url)
 
 
 @router.delete("/connections/{connection_id}")

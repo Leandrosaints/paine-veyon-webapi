@@ -1,52 +1,63 @@
 # Veyon Control Panel
 
-Painel web local que integra as operações da **Veyon WebAPI v1**. A aplicação escuta somente em `127.0.0.1:8000`; a conexão com o serviço Veyon é configurável no painel.
+Painel local para gerenciar computadores e ambientes e integrar a Veyon WebAPI v1. A aplicação escuta somente em `127.0.0.1:8000`.
 
-## Iniciar no Windows
+## Iniciar
 
-Execute `iniciar_painel.bat` ou, com o ambiente virtual ativado, rode:
+Instale as dependências e execute o painel:
 
 ```powershell
+python -m pip install -r requirements.txt
 python main.py
 ```
 
-Abra [http://127.0.0.1:8000](http://127.0.0.1:8000). A documentação OpenAPI interativa fica em [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
+Ou abra `iniciar_painel.bat`. Acesse [http://127.0.0.1:8000](http://127.0.0.1:8000); a documentação interativa está em [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
 
-O endereço padrão da WebAPI é `http://127.0.0.1:11080`. Ele pode ser alterado no botão de configurações ou pela variável de ambiente `VEYON_API_URL`. O serviço Veyon precisa estar com WebAPI habilitada (porta padrão `11080`). Para o cenário proxy, informe o endereço do servidor Veyon e o host do computador remoto no formulário de conexão.
+O endereço padrão do serviço Veyon é `http://127.0.0.1:11080`. Defina `VEYON_API_URL` para apontar a um servidor WebAPI proxy. Cada computador também pode usar um endereço de WebAPI próprio. O WebAPI precisa estar habilitado no Veyon.
 
-Exemplo de configuração:
+## Banco de dados e migrações
+
+O SQLite é criado em `data/veyon_panel.sqlite3`. Ao iniciar, o painel executa as migrações Alembic até a revisão mais recente. Para aplicar migrações manualmente:
 
 ```powershell
-$env:VEYON_API_URL = "http://192.168.0.5:11080"
-python main.py
+alembic upgrade head
 ```
 
-## Operações disponíveis
+Para criar uma migração após alterações nos modelos:
 
-- Descobrir métodos de autenticação; autenticar e fechar conexões.
-- Capturar o framebuffer em PNG/JPEG e configurar qualidade e dimensões.
-- Listar recursos, consultar status e iniciar/parar recursos.
-- Interface para os recursos padrão: ScreenLock, InputDevicesLock, TextMessage, OpenWebsite, StartApp, UserLogin, UserLogoff, Reboot, PowerDown e recursos de demonstração.
-- Consultar usuário e sessão da máquina.
-- Executar UUIDs de recursos personalizados com argumentos JSON.
+```powershell
+alembic revision --autogenerate -m "descricao da alteracao"
+```
 
-As rotas locais estão em `main.py`. A credencial é enviada ao Veyon somente durante a autenticação; o painel conserva a sessão em memória no backend e o navegador conserva apenas os cadastros e o identificador opaco local da conexão. Reiniciar o painel encerra o acesso a essas sessões locais.
+`PANEL_DATA_DIR` pode apontar para outro diretório de dados e `DATABASE_URL` pode substituir a URL do banco. O `.gitignore` exclui os dados locais.
 
-## Rotas locais
+## Organização
+
+- `veyon_panel/api/routers`: rotas REST de computadores, ambientes e proxy Veyon.
+- `veyon_panel/models`: modelos SQLAlchemy.
+- `veyon_panel/schemas`: validação Pydantic.
+- `veyon_panel/db`: engine, sessão e execução Alembic.
+- `veyon_panel/services`: comunicação HTTP com a WebAPI do Veyon.
+- `migrations/versions`: histórico versionado do esquema do SQLite.
+- `static/`: interface e estilos.
+
+Ambientes agrupam computadores na navegação lateral e na grade, no estilo de locais/salas do Veyon. Nomes, endereços, observações e associação ao ambiente são persistidos no SQLite. Chaves privadas ficam apenas no navegador durante o login; sessões WebAPI ficam em memória e precisam ser refeitas após reiniciar o painel.
+
+## Rotas
 
 | Método | Rota | Uso |
 | --- | --- | --- |
-| GET | `/api/config` | Configuração padrão |
-| GET | `/api/health` | Saúde do painel |
-| GET | `/api/authentication/{host}/methods` | Métodos de autenticação do host |
-| POST | `/api/connections` | Criar conexão autenticada |
-| GET | `/api/connections` | Listar conexões ativas |
-| DELETE | `/api/connections/{id}` | Fechar conexão |
-| GET | `/api/connections/{id}/framebuffer` | Captura de tela |
-| GET | `/api/connections/{id}/features` | Listar recursos |
-| GET | `/api/connections/{id}/features/{uuid}` | Consultar estado do recurso |
-| PUT | `/api/connections/{id}/features/{uuid}` | Ativar/parar recurso |
-| GET | `/api/connections/{id}/user` | Usuário da máquina |
-| GET | `/api/connections/{id}/session` | Sessão da máquina |
+| GET/POST | `/api/environments` | Listar e criar ambientes |
+| PATCH/DELETE | `/api/environments/{id}` | Editar e remover ambientes |
+| GET/POST | `/api/computers` | Listar e cadastrar computadores |
+| PATCH/DELETE | `/api/computers/{id}` | Editar e remover computadores |
+| GET | `/api/authentication/{host}/methods` | Consultar métodos de autenticação |
+| POST/GET | `/api/connections` | Autenticar e listar sessões |
+| DELETE | `/api/connections/{id}` | Encerrar sessão |
+| GET | `/api/connections/{id}/framebuffer` | Capturar tela |
+| GET | `/api/connections/{id}/features` | Listar recursos Veyon |
+| GET/PUT | `/api/connections/{id}/features/{uuid}` | Consultar e controlar recurso |
+| GET | `/api/connections/{id}/user` | Informações do usuário |
+| GET | `/api/connections/{id}/session` | Informações da sessão |
 
-Fonte da API: [documentação oficial Veyon WebAPI](https://docs.veyon.io/en/latest/developer/webapi.html).
+Referência: [documentação oficial da Veyon WebAPI](https://docs.veyon.io/en/latest/developer/webapi.html).

@@ -13,7 +13,13 @@ python main.py
 
 Ou abra `iniciar_painel.bat`. Acesse [http://127.0.0.1:8000](http://127.0.0.1:8000); a documentação interativa está em [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
 
+As rotas `/api` exigem `X-API-Key`. Na primeira inicialização, o painel cria `PANEL_API_KEY` no `.env`; informe essa chave quando o navegador solicitar. A chave fica guardada na sessão da aba e não é retornada pela API. Para clientes HTTP, envie o valor no cabeçalho `X-API-Key`. Em conexões WebSocket, o frontend usa um subprotocolo dedicado, sem colocar a chave na URL.
+
 O endereço padrão do serviço Veyon é `http://192.168.120.155:11080`. Defina `VEYON_API_URL` para apontar a um servidor WebAPI proxy. Cada computador também pode usar um endereço de WebAPI próprio. O WebAPI precisa estar habilitado no Veyon.
+
+Na tela de cada computador, use **Ver em tempo real** para iniciar ou parar a transmissão. O painel mantém um WebSocket aberto enquanto a transmissão estiver ativa e solicita novas capturas ao Veyon aproximadamente quatro vezes por segundo.
+
+Capturas HTTP bem-sucedidas e placeholders offline são armazenados em memória por dois segundos; as requisições à WebAPI Veyon têm timeout de três segundos. Sessões sem uso por dois minutos são encerradas em uma tarefa de limpeza executada a cada minuto. As operações da API são registradas no console para auditoria.
 
 ## Banco de dados e migrações
 

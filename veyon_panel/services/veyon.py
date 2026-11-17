@@ -7,7 +7,7 @@ from fastapi import HTTPException
 
 async def request(base_url: str, method: str, path: str, *, uid: str | None = None,
                   json: Any = None, params: dict[str, Any] | None = None,
-                  timeout: float = 15) -> httpx.Response:
+                  timeout: float = 3) -> httpx.Response:
     headers = {"Connection-Uid": uid} if uid else {}
     try:
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:

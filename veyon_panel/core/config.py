@@ -1,4 +1,5 @@
 import os
+import secrets
 from pathlib import Path
 
 from cryptography.fernet import Fernet
@@ -14,6 +15,11 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{(DATA_DIR / 'veyon_panel.sqlite3').as_posix()}")
 VEYON_API_URL = os.getenv("VEYON_API_URL", "http://192.168.120.155:11080").rstrip("/")
 VEYON_AUTH_METHOD = os.getenv("VEYON_AUTH_METHOD", "0c69b301-81b4-42d6-8fae-128cdd113314")
+PANEL_API_KEY = os.getenv("PANEL_API_KEY")
+if not PANEL_API_KEY:
+    PANEL_API_KEY = secrets.token_urlsafe(32)
+    os.environ["PANEL_API_KEY"] = PANEL_API_KEY
+    set_key(str(_env_file), "PANEL_API_KEY", PANEL_API_KEY)
 PANEL_ENCRYPTION_KEY = os.getenv("PANEL_ENCRYPTION_KEY")
 if not PANEL_ENCRYPTION_KEY:
     PANEL_ENCRYPTION_KEY = Fernet.generate_key().decode("ascii")

@@ -13,7 +13,7 @@ python main.py
 
 Ou abra `iniciar_painel.bat`. Acesse [http://127.0.0.1:8000](http://127.0.0.1:8000); a documentação interativa está em [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
 
-O endereço padrão do serviço Veyon é `http://127.0.0.1:11080`. Defina `VEYON_API_URL` para apontar a um servidor WebAPI proxy. Cada computador também pode usar um endereço de WebAPI próprio. O WebAPI precisa estar habilitado no Veyon.
+O endereço padrão do serviço Veyon é `http://192.168.120.155:11080`. Defina `VEYON_API_URL` para apontar a um servidor WebAPI proxy. Cada computador também pode usar um endereço de WebAPI próprio. O WebAPI precisa estar habilitado no Veyon.
 
 ## Banco de dados e migrações
 

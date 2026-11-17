@@ -1,5 +1,5 @@
 import secrets
-from typing import Any
+from typing import Any, NoReturn
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -34,13 +34,29 @@ class Connection:
 
 
 connections: dict[str, Connection] = {}
+EXPIRED_SESSION_MESSAGE = "A sessão do Veyon expirou. Reconecte o computador para continuar."
 
 
 def connection_or_401(connection_id: str) -> Connection:
     conn = connections.get(connection_id)
     if not conn:
-        raise HTTPException(401, "Conexão inexistente ou expirada; autentique novamente.")
+        raise HTTPException(401, EXPIRED_SESSION_MESSAGE)
     return conn
+
+
+def raise_connection_error(connection_id: str, status_code: int, detail: Any) -> NoReturn:
+    if status_code == 401:
+        connections.pop(connection_id, None)
+        raise HTTPException(401, EXPIRED_SESSION_MESSAGE)
+    raise HTTPException(status_code, detail)
+
+
+async def connection_request(connection_id: str, conn: Connection, method: str, path: str,
+                             **kwargs: Any) -> httpx.Response:
+    try:
+        return await request(conn.base_url, method, path, uid=conn.uid, **kwargs)
+    except HTTPException as exc:
+        raise_connection_error(connection_id, exc.status_code, exc.detail)
 
 
 @router.get("/authentication/{host}/methods")
@@ -81,7 +97,7 @@ async def authenticate_saved_computer(computer_id: int, db: Session = Depends(ge
 async def close_connection(connection_id: str):
     conn = connection_or_401(connection_id)
     try:
-        result = payload(await request(conn.base_url, "DELETE", host_path(conn.host), uid=conn.uid))
+        result = payload(await connection_request(connection_id, conn, "DELETE", host_path(conn.host)))
     finally:
         connections.pop(connection_id, None)
     return result
@@ -97,11 +113,9 @@ async def list_connections():
 async def framebuffer(connection_id: str,
                       format: str = Query("jpeg", regex="^(png|jpeg)$"),
                       compression: int | None = Query(None, ge=1, le=9),
-                      quality: int | None = Query(75, ge=1, le=100),
-                      width: int | None = Query(None, ge=1), height: int | None = Query(None, ge=1)):
+                      quality: int | None = Query(75, ge=1, le=100)):
     conn = connection_or_401(connection_id)
-    params = {k: v for k, v in {"format": format, "compression": compression,
-                                 "quality": quality, "width": width, "height": height}.items()
+    params = {k: v for k, v in {"format": format, "compression": compression, "quality": quality}.items()
               if v is not None}
     try:
         async with httpx.AsyncClient(timeout=20) as client:
@@ -112,20 +126,20 @@ async def framebuffer(connection_id: str,
     if response.is_error:
         try: detail = response.json()
         except ValueError: detail = response.text
-        raise HTTPException(response.status_code, detail)
+        raise_connection_error(connection_id, response.status_code, detail)
     return Response(response.content, media_type=response.headers.get("content-type", "image/jpeg"))
 
 
 @router.get("/connections/{connection_id}/features")
 async def features(connection_id: str):
     c = connection_or_401(connection_id)
-    return payload(await request(c.base_url, "GET", "feature", uid=c.uid))
+    return payload(await connection_request(connection_id, c, "GET", "feature"))
 
 
 @router.get("/connections/{connection_id}/features/{feature_uid}")
 async def feature_status(connection_id: str, feature_uid: str):
     c = connection_or_401(connection_id)
-    return payload(await request(c.base_url, "GET", f"feature/{feature_uid}", uid=c.uid))
+    return payload(await connection_request(connection_id, c, "GET", f"feature/{feature_uid}"))
 
 
 @router.put("/connections/{connection_id}/features/{feature_uid}")
@@ -134,17 +148,17 @@ async def set_feature(connection_id: str, feature_uid: str, body: FeatureRequest
     data: dict[str, Any] = {"active": body.active}
     if body.arguments is not None:
         data["arguments"] = body.arguments
-    return payload(await request(c.base_url, "PUT", f"feature/{feature_uid}",
-                                 uid=c.uid, json=data))
+    return payload(await connection_request(connection_id, c, "PUT", f"feature/{feature_uid}",
+                                            json=data))
 
 
 @router.get("/connections/{connection_id}/user")
 async def user_info(connection_id: str):
     c = connection_or_401(connection_id)
-    return payload(await request(c.base_url, "GET", "user", uid=c.uid))
+    return payload(await connection_request(connection_id, c, "GET", "user"))
 
 
 @router.get("/connections/{connection_id}/session")
 async def session_info(connection_id: str):
     c = connection_or_401(connection_id)
-    return payload(await request(c.base_url, "GET", "session", uid=c.uid))
+    return payload(await connection_request(connection_id, c, "GET", "session"))

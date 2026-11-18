@@ -13,7 +13,9 @@ python main.py
 
 Ou abra `iniciar_painel.bat`. No próprio computador, acesse [http://localhost:8000](http://localhost:8000). Para acessar de outro dispositivo na mesma rede, descubra o endereço do computador que está executando o painel e acesse `http://<ENDERECO-DA-MAQUINA>:8000`. A documentação interativa fica em `http://<ENDERECO-DA-MAQUINA>:8000/docs`.
 
-O acesso pela rede local depende de o firewall permitir conexões de entrada na porta `8000`. As rotas `/api` exigem `X-API-Key`. Na primeira inicialização, o painel cria `PANEL_API_KEY` no `.env`; informe essa chave quando o navegador solicitar. A chave fica guardada na sessão da aba e não é retornada pela API. Para clientes HTTP, envie o valor no cabeçalho `X-API-Key`. Em conexões WebSocket, o frontend usa um subprotocolo dedicado, sem colocar a chave na URL.
+All /api routes require X-API-Key unless PANEL_DEV_MODE=true is enabled. The key is stored in the session and sent in the X-API-Key header.
+
+For development, set PANEL_DEV_MODE=true in .env to disable the panel API key requirement. The default is false; restart the server after changing it.
 
 ## Catálogo e deploy de software
 
@@ -21,9 +23,9 @@ O catálogo é criado pela migração do banco e recebe um software de exemplo n
 
 O endereço padrão do serviço Veyon é `http://localhost:11080`. Defina `VEYON_API_URL` para apontar a um servidor WebAPI proxy. Cada computador também pode usar um endereço de WebAPI próprio. O WebAPI precisa estar habilitado no Veyon.
 
-Na tela de cada computador, use **Ver em tempo real** para iniciar ou parar a transmissão. O painel mantém um WebSocket aberto enquanto a transmissão estiver ativa e solicita novas capturas ao Veyon aproximadamente quatro vezes por segundo.
+Screen capture uses on-demand HTTP when opening a computer or clicking Refresh. Temporary failures leave the last displayed image in place.
 
-Capturas HTTP bem-sucedidas e placeholders offline são armazenados em memória por dois segundos; as requisições à WebAPI Veyon têm timeout de três segundos. Sessões sem uso por dois minutos são encerradas em uma tarefa de limpeza executada a cada minuto. As operações da API são registradas no console para auditoria.
+Capturas HTTP bem-sucedidas ficam em cache por dois segundos; cada captura espera no m?ximo dois segundos e retorna sem conte?do quando o Veyon ainda n?o disponibilizou uma imagem.
 
 ## Banco de dados e migrações
 
@@ -55,7 +57,7 @@ Ambientes agrupam computadores na navegação lateral e na grade, no estilo de l
 
 Para habilitar execução remota de scripts, configure `PANEL_PUBLIC_BASE_URL` com a URL alcançável pelos computadores clientes (incluindo esquema e porta). Os arquivos `.ps1` e `.bat` ficam em `PANEL_UPLOADS_DIR` ou, por padrão, em `data/uploads`. A execução, coleta do log e inventário usam `StartApp` e callbacks autenticados do painel; a URL pública e `X-API-Key` precisam estar acessíveis dos clientes.
 
-As capturas da grade não consultam mais o framebuffer. A captura individual ocorre ao abrir o detalhe ou clicar em Atualizar; a transmissão ao vivo só consulta enquanto “Ver em tempo real” estiver ligado. `VEYON_LIVE_FRAME_INTERVAL_SECONDS` ajusta o intervalo da transmissão (mínimo de 2 segundos).
+Screen captures are requested on demand over HTTP. A two-second timeout returns no content, and the browser keeps the last displayed image.
 
 O endpoint de execução aguarda o callback final dos scripts por até `SCRIPT_EXECUTION_TIMEOUT_SECONDS` (padrão de 300 segundos). O resultado inclui código de saída e saída padrão/erro; em timeout, o painel orienta consultar **Ver Log**.
 

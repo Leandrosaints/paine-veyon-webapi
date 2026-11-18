@@ -162,25 +162,24 @@ async def execute_scripts(body: ExecuteScriptsRequest, db: Session = Depends(get
                 pending_results[result_key] = result_future
                 callback = callback_url("scripts/log", ip)
                 setup = ("$ErrorActionPreference='Stop';$exitCode=0;$combined='';"
-                         "$log=Join-Path $env:TEMP 'veyon_script_log.txt';"
-                         "$out=Join-Path $env:TEMP 'veyon_script_output.txt';")
+                         "$log=Join-Path $env:SystemRoot 'Temp\veyon_log.txt';")
                 fetch = ("$scriptPath=Join-Path $env:TEMP " +
                          ps_quote(f"veyon_{script_record.id}.{script_record.tipo}") + ";" +
                          f"Invoke-WebRequest -Uri {ps_quote(script_url)} "
-                         f"-Headers @{{'X-API-Key'={ps_quote(PANEL_API_KEY)}}} -OutFile $scriptPath;")
+                         f"-UseBasicParsing -Headers @{{'X-API-Key'={ps_quote(PANEL_API_KEY)}}} -OutFile $scriptPath;")
                 if script_record.tipo == "ps1":
-                    launch = "& powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $scriptPath *> $out;$exitCode=$LASTEXITCODE;"
+                    launch = "& powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $scriptPath *> $log;$exitCode=$LASTEXITCODE;"
                 else:
-                    launch = "& cmd.exe /d /c ('\"'+$scriptPath+'\"') *> $out;$exitCode=$LASTEXITCODE;"
+                    launch = "& cmd.exe /d /c ('\"'+$scriptPath+'\"') *> $log;$exitCode=$LASTEXITCODE;"
                 callback_body = (f"@{{ip={ps_quote(ip)};run_id={ps_quote(run_id)};"
                                  "output=$combined;exit_code=$exitCode}")
                 post = callback_post_script(callback, PANEL_API_KEY, callback_body)
                 remote_script = (
                     setup + "try{" + fetch + launch +
-                    "$combined=Get-Content -LiteralPath $out -Raw -ErrorAction SilentlyContinue;"
-                    "}catch{$exitCode=1;$combined=$_.Exception.ToString();}"
-                    "finally{try{Set-Content -LiteralPath $log -Value $combined -ErrorAction SilentlyContinue;}catch{}" +
-                    post + "}"
+                    "$combined=Get-Content -LiteralPath $log -Raw -ErrorAction SilentlyContinue;"
+                    "}catch{$exitCode=1;$combined=$_.Exception.ToString();"
+                    "try{Set-Content -LiteralPath $log -Value $combined -ErrorAction SilentlyContinue}catch{}}"
+                    "finally{" + post + "}"
                 )
                 await start_remote(connection_id, conn, remote_script)
                 logger.info("Script run %s | Host: %s | waiting for completion callback", body.script_id, ip)
@@ -238,7 +237,7 @@ async def collect_remote(ip: str, kind: str, script: str, timeout: float = 25):
 async def get_script_log(ip: str):
     callback = callback_url("scripts/log", ip)
     script = (
-        "$path=Join-Path $env:TEMP 'veyon_script_log.txt';"
+        "$path=Join-Path $env:SystemRoot 'Temp\veyon_log.txt';"
         "$content=if(Test-Path -LiteralPath $path){Get-Content -LiteralPath $path -Raw}else{'Arquivo de log ainda não existe.'};"
         + callback_post_script(callback, PANEL_API_KEY, "@{output=$content;exit_code=$null}")
     )
@@ -265,6 +264,10 @@ async def inventory(ip: str):
         "$items=foreach($path in $paths){Get-ItemProperty $path -ErrorAction SilentlyContinue|"
         "Where-Object {$_.DisplayName}|Select-Object @{n='nome';e={$_.DisplayName}},"
         "@{n='versao';e={$_.DisplayVersion}},@{n='fabricante';e={$_.Publisher}}};"
+        "$json=@($items)|ConvertTo-Json -Depth 5;"
+        "$inventoryPath=Join-Path $env:SystemRoot 'Temp\inventario.json';"
+        "[IO.File]::WriteAllText($inventoryPath,$json,[Text.Encoding]::UTF8);"
+        "$items=Get-Content -LiteralPath $inventoryPath -Raw|ConvertFrom-Json;"
         + callback_post_script(callback, PANEL_API_KEY, "@{inventory=@($items)}")
     )
     return {"ip": ip, "softwares": await collect_remote(ip, "inventory", command)}

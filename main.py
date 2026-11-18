@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from veyon_panel.api.routers import resources, scripts, software, veyon
-from veyon_panel.core.config import PANEL_API_KEY, STATIC_DIR
+from veyon_panel.core.config import PANEL_API_KEY, PANEL_DEV_MODE, STATIC_DIR
 from veyon_panel.db.migrations import upgrade_database
 from veyon_panel.db.session import SessionLocal
 from veyon_panel.models.resources import Software
@@ -85,7 +85,9 @@ async def require_api_key(request: Request, call_next):
     if request.url.path == "/api" or request.url.path.startswith("/api/"):
         provided_key = request.headers.get("X-API-Key", "")
         action = f"{request.method} {request_action(request)}"
-        if not secrets.compare_digest(provided_key.encode("utf-8"), PANEL_API_KEY.encode("utf-8")):
+        if not PANEL_DEV_MODE and not secrets.compare_digest(
+            provided_key.encode("utf-8"), PANEL_API_KEY.encode("utf-8")
+        ):
             logger.info("Ação: %s | Host: %s | Erro", action, request_host(request))
             return JSONResponse(status_code=401, content={"detail": "API Key inválida."})
 

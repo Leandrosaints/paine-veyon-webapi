@@ -43,10 +43,6 @@ class AuthRequest(BaseModel):
     base_url: str | None = None
 
 
-class BulkHostsRequest(BaseModel):
-    ips: list[str] = Field(min_length=1, max_length=500)
-
-
 class FeatureRequest(BaseModel):
     active: bool
     arguments: dict[str, Any] | None = None
@@ -192,33 +188,6 @@ async def framebuffer(connection_id: str,
     except asyncio.TimeoutError:
         logger.info("Framebuffer timed out | Host: %s", conn.host)
         return Response(status_code=204)
-
-
-@router.post("/mass-logoff")
-async def mass_logoff(body: BulkHostsRequest):
-    semaphore = asyncio.Semaphore(5)
-
-    async def logoff(ip: str):
-        async with semaphore:
-            try:
-                connection_id = next((key for key, conn in connections.items() if conn.host == ip), None)
-                if connection_id is None:
-                    return {"ip": ip, "status": "error", "detail": "No active authenticated session."}
-                conn = connection_or_401(connection_id)
-                result = payload(await connection_request(
-                    connection_id, conn, "PUT", "feature/da9ca56a-b2ad-4fff-8f8a-929b2927b442",
-                    json={"active": True, "arguments": {"applications": ["shutdown.exe /l /f"]}},
-                ))
-                logger.info("A????o: logoff em massa | Host: %s | Sucesso", ip)
-                return {"ip": ip, "status": "accepted", "result": result}
-            except HTTPException as exc:
-                logger.warning("A????o: logoff em massa | Host: %s | Erro %s", ip, exc.status_code)
-                return {"ip": ip, "status": "error", "detail": exc.detail, "http_status": exc.status_code}
-            except Exception as exc:
-                logger.exception("Falha no logoff remoto para %s", ip)
-                return {"ip": ip, "status": "error", "detail": str(exc)}
-
-    return {"results": await asyncio.gather(*(logoff(ip) for ip in body.ips))}
 
 
 @router.get("/connections/{connection_id}/features")

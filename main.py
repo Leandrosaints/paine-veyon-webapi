@@ -11,9 +11,11 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from veyon_panel.api.routers import resources, veyon
+from veyon_panel.api.routers import resources, scripts, software, veyon
 from veyon_panel.core.config import PANEL_API_KEY, STATIC_DIR
 from veyon_panel.db.migrations import upgrade_database
+from veyon_panel.db.session import SessionLocal
+from veyon_panel.models.resources import Software
 from veyon_panel.services.veyon import host_path, request as veyon_request
 
 upgrade_database()
@@ -26,6 +28,29 @@ app = FastAPI(
 )
 app.include_router(resources.router, prefix="/api")
 app.include_router(veyon.router, prefix="/api")
+app.include_router(software.router, prefix="/api")
+app.include_router(scripts.router, prefix="/api")
+
+
+def seed_softwares() -> None:
+    """Install a sample catalog entry on first run; operators can override its URLs."""
+    with SessionLocal() as db:
+        if db.query(Software).filter(Software.nome == "Microsoft Visual C++ Runtime x64").first():
+            return
+        public_url = os.getenv(
+            "SEED_SOFTWARE_PUBLIC_URL", "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+        )
+        local_url = os.getenv("SEED_SOFTWARE_LOCAL_URL", public_url)
+        db.add(Software(
+            nome="Microsoft Visual C++ Runtime x64",
+            url_local=local_url,
+            url_publica=public_url,
+            argumentos_instalacao="/install /quiet /norestart",
+        ))
+        db.commit()
+
+
+seed_softwares()
 
 
 def request_host(request: Request) -> str:
@@ -114,4 +139,4 @@ app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=int(os.getenv("PANEL_PORT", "8000")))
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PANEL_PORT", "8000")))

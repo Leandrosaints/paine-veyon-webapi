@@ -40,3 +40,23 @@ class Computer(Base):
     @property
     def has_credentials(self) -> bool:
         return bool(self.credentials_encrypted)
+
+
+class Software(Base):
+    __tablename__ = "softwares"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    nome: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    url_local: Mapped[str] = mapped_column(String(2000))
+    url_publica: Mapped[str] = mapped_column(String(2000))
+    argumentos_instalacao: Mapped[str] = mapped_column(String(1000), default="/quiet /norestart")
+
+
+class RepositoryScript(Base):
+    __tablename__ = "repositorio_scripts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    nome: Mapped[str] = mapped_column(String(160), index=True)
+    nome_arquivo: Mapped[str] = mapped_column(String(255))
+    data_upload: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    tipo: Mapped[str] = mapped_column(String(8))

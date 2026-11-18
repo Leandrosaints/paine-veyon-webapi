@@ -12,9 +12,21 @@ load_dotenv(_env_file)
 STATIC_DIR = ROOT_DIR / "static"
 DATA_DIR = Path(os.getenv("PANEL_DATA_DIR", str(ROOT_DIR / "data")))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+UPLOADS_DIR = Path(os.getenv("PANEL_UPLOADS_DIR", str(DATA_DIR / "uploads")))
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+PANEL_PUBLIC_BASE_URL = os.getenv("PANEL_PUBLIC_BASE_URL", "").strip().rstrip("/")
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{(DATA_DIR / 'veyon_panel.sqlite3').as_posix()}")
-VEYON_API_URL = os.getenv("VEYON_API_URL", "http://192.168.120.155:11080").rstrip("/")
+VEYON_API_URL = os.getenv("VEYON_API_URL", "http://localhost:11080").rstrip("/")
 VEYON_AUTH_METHOD = os.getenv("VEYON_AUTH_METHOD", "0c69b301-81b4-42d6-8fae-128cdd113314")
+LOCAL_NETWORK_CIDRS = tuple(
+    network.strip() for network in os.getenv("LOCAL_NETWORK_CIDRS", "").split(",") if network.strip()
+)
+VEYON_LIVE_FRAME_INTERVAL_SECONDS = max(
+    2.0, float(os.getenv("VEYON_LIVE_FRAME_INTERVAL_SECONDS", "2"))
+)
+SCRIPT_EXECUTION_TIMEOUT_SECONDS = max(
+    10.0, float(os.getenv("SCRIPT_EXECUTION_TIMEOUT_SECONDS", "300"))
+)
 PANEL_API_KEY = os.getenv("PANEL_API_KEY")
 if not PANEL_API_KEY:
     PANEL_API_KEY = secrets.token_urlsafe(32)

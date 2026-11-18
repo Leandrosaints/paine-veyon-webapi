@@ -5,7 +5,7 @@ from sqlalchemy import engine_from_config, pool
 
 from veyon_panel.core.config import DATABASE_URL
 from veyon_panel.db.base import Base
-from veyon_panel.models import Computer, Environment  # noqa: F401
+from veyon_panel.models import Computer, Environment, RepositoryScript, Software  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", DATABASE_URL.replace("%", "%%"))

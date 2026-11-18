@@ -11,7 +11,10 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from veyon_panel.core.config import PANEL_API_KEY, VEYON_API_URL, VEYON_AUTH_METHOD
+from veyon_panel.core.config import (
+    PANEL_API_KEY, VEYON_API_URL, VEYON_AUTH_METHOD,
+    VEYON_LIVE_FRAME_INTERVAL_SECONDS,
+)
 from veyon_panel.core.secrets import decrypt_credentials
 from veyon_panel.db.session import get_db
 from veyon_panel.models.resources import Computer
@@ -21,8 +24,20 @@ router = APIRouter(tags=["Veyon WebAPI"])
 logger = logging.getLogger("veyon.audit")
 FRAMEBUFFER_CACHE_TTL = 2.0
 OFFLINE_PLACEHOLDER = """<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360"><rect width="640" height="360" fill="#171b25"/><circle cx="320" cy="135" r="35" fill="none" stroke="#ff7484" stroke-width="8"/><path d="M296 111l48 48m0-48-48 48" stroke="#ff7484" stroke-width="8" stroke-linecap="round"/><text x="320" y="220" fill="#e8ebf2" font-family="sans-serif" font-size="26" text-anchor="middle">Máquina Offline</text><text x="320" y="255" fill="#929bad" font-family="sans-serif" font-size="15" text-anchor="middle">Não foi possível obter a captura da tela</text></svg>""".encode("utf-8")
+FRAMEBUFFER_PENDING_PLACEHOLDER = """<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360"><rect width="640" height="360" fill="#171b25"/><circle cx="320" cy="135" r="32" fill="none" stroke="#e9c56f" stroke-width="7"/><path d="M320 116v22l15 9" fill="none" stroke="#e9c56f" stroke-width="6" stroke-linecap="round"/><text x="320" y="220" fill="#e8ebf2" font-family="sans-serif" font-size="24" text-anchor="middle">Tela ainda nao disponivel</text><text x="320" y="255" fill="#929bad" font-family="sans-serif" font-size="15" text-anchor="middle">Aguarde ou clique em Atualizar</text></svg>""".encode("utf-8")
 framebuffer_cache: dict[tuple[str, str, int | None, int | None], tuple[float, bytes, str]] = {}
 framebuffer_locks: dict[tuple[str, str, int | None, int | None], asyncio.Lock] = {}
+
+
+def framebuffer_not_ready(response: httpx.Response) -> bool:
+    try:
+        body = response.json()
+    except ValueError:
+        return False
+    error = body.get("error", body) if isinstance(body, dict) else {}
+    code = error.get("code") if isinstance(error, dict) else None
+    message = error.get("message", "") if isinstance(error, dict) else ""
+    return str(code) == "10" or "framebuffer not yet available" in str(message).lower()
 
 
 class AuthRequest(BaseModel):
@@ -153,25 +168,34 @@ async def framebuffer(connection_id: str,
             return Response(cached[1], media_type=cached[2])
         try:
             async with httpx.AsyncClient(timeout=3) as client:
-                response = await client.get(f"{conn.base_url}/api/v1/framebuffer",
-                                            headers={"Connection-Uid": conn.uid}, params=params)
-        except httpx.RequestError as exc:
-            logger.info("Ação: framebuffer | Host: %s | Erro", conn.host)
+                for attempt in range(3):
+                    response = await client.get(f"{conn.base_url}/api/v1/framebuffer",
+                                                headers={"Connection-Uid": conn.uid}, params=params)
+                    if response.status_code == 401:
+                        try:
+                            detail = response.json()
+                        except ValueError:
+                            detail = response.text
+                        raise_connection_error(connection_id, response.status_code, detail)
+                    if framebuffer_not_ready(response):
+                        if attempt < 2:
+                            await asyncio.sleep(VEYON_LIVE_FRAME_INTERVAL_SECONDS)
+                            continue
+                        logger.info("Framebuffer not yet available | Host: %s", conn.host)
+                        content, media_type = FRAMEBUFFER_PENDING_PLACEHOLDER, "image/svg+xml"
+                        break
+                    if response.is_error:
+                        logger.info("Framebuffer request failed with %s | Host: %s",
+                                    response.status_code, conn.host)
+                        content, media_type = OFFLINE_PLACEHOLDER, "image/svg+xml"
+                    else:
+                        content = response.content
+                        media_type = response.headers.get("content-type", "image/jpeg")
+                        logger.info("Framebuffer captured | Host: %s", conn.host)
+                    break
+        except httpx.RequestError:
+            logger.info("Framebuffer connection failed | Host: %s", conn.host)
             content, media_type = OFFLINE_PLACEHOLDER, "image/svg+xml"
-        else:
-            if response.status_code == 401:
-                try:
-                    detail = response.json()
-                except ValueError:
-                    detail = response.text
-                raise_connection_error(connection_id, response.status_code, detail)
-            if response.is_error:
-                logger.info("Ação: framebuffer | Host: %s | Erro", conn.host)
-                content, media_type = OFFLINE_PLACEHOLDER, "image/svg+xml"
-            else:
-                content = response.content
-                media_type = response.headers.get("content-type", "image/jpeg")
-                logger.info("Ação: framebuffer | Host: %s | Sucesso", conn.host)
         conn.last_used = time.monotonic()
         framebuffer_cache[cache_key] = (
             time.monotonic() + FRAMEBUFFER_CACHE_TTL, content, media_type
@@ -219,6 +243,14 @@ async def live_framebuffer(websocket: WebSocket, connection_id: str):
                     await websocket.close(code=1011, reason="Erro ao obter framebuffer")
                     return
 
+                if framebuffer_not_ready(response):
+                    await websocket.send_json({
+                        "type": "pending",
+                        "message": "O Veyon ainda estÃ¡ preparando a captura da tela.",
+                    })
+                    await asyncio.sleep(VEYON_LIVE_FRAME_INTERVAL_SECONDS)
+                    continue
+
                 if response.is_error:
                     try:
                         detail = response.json()
@@ -238,7 +270,7 @@ async def live_framebuffer(websocket: WebSocket, connection_id: str):
                         return
 
                 await websocket.send_bytes(response.content)
-                await asyncio.sleep(0.25)
+                await asyncio.sleep(VEYON_LIVE_FRAME_INTERVAL_SECONDS)
             await websocket.send_json(
                 {"type": "error", "status": 401, "message": EXPIRED_SESSION_MESSAGE}
             )
@@ -266,8 +298,12 @@ async def set_feature(connection_id: str, feature_uid: str, body: FeatureRequest
     data: dict[str, Any] = {"active": body.active}
     if body.arguments is not None:
         data["arguments"] = body.arguments
-    return payload(await connection_request(connection_id, c, "PUT", f"feature/{feature_uid}",
-                                            json=data))
+    result = payload(await connection_request(connection_id, c, "PUT", f"feature/{feature_uid}",
+                                               json=data))
+    if feature_uid == "ccb535a2-1d24-4cc1-a709-8b47d2b2ac79":
+        logger.info("Ação: %s | Host: %s | Sucesso",
+                    "bloquear computador" if body.active else "desbloquear computador", c.host)
+    return result
 
 
 @router.get("/connections/{connection_id}/user")

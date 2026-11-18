@@ -1,6 +1,6 @@
 # Veyon Control Panel
 
-Painel local para gerenciar computadores e ambientes e integrar a Veyon WebAPI v1. A aplicação escuta somente em `127.0.0.1:8000`.
+Painel para gerenciar computadores e ambientes e integrar a Veyon WebAPI v1. A aplicação escuta em todas as interfaces de rede na porta `8000`, permitindo acesso por `localhost` ou pelo IP da máquina na rede local.
 
 ## Iniciar
 
@@ -11,11 +11,15 @@ python -m pip install -r requirements.txt
 python main.py
 ```
 
-Ou abra `iniciar_painel.bat`. Acesse [http://127.0.0.1:8000](http://127.0.0.1:8000); a documentação interativa está em [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
+Ou abra `iniciar_painel.bat`. No próprio computador, acesse [http://localhost:8000](http://localhost:8000). Para acessar de outro dispositivo na mesma rede, descubra o endereço do computador que está executando o painel e acesse `http://<ENDERECO-DA-MAQUINA>:8000`. A documentação interativa fica em `http://<ENDERECO-DA-MAQUINA>:8000/docs`.
 
-As rotas `/api` exigem `X-API-Key`. Na primeira inicialização, o painel cria `PANEL_API_KEY` no `.env`; informe essa chave quando o navegador solicitar. A chave fica guardada na sessão da aba e não é retornada pela API. Para clientes HTTP, envie o valor no cabeçalho `X-API-Key`. Em conexões WebSocket, o frontend usa um subprotocolo dedicado, sem colocar a chave na URL.
+O acesso pela rede local depende de o firewall permitir conexões de entrada na porta `8000`. As rotas `/api` exigem `X-API-Key`. Na primeira inicialização, o painel cria `PANEL_API_KEY` no `.env`; informe essa chave quando o navegador solicitar. A chave fica guardada na sessão da aba e não é retornada pela API. Para clientes HTTP, envie o valor no cabeçalho `X-API-Key`. Em conexões WebSocket, o frontend usa um subprotocolo dedicado, sem colocar a chave na URL.
 
-O endereço padrão do serviço Veyon é `http://192.168.120.155:11080`. Defina `VEYON_API_URL` para apontar a um servidor WebAPI proxy. Cada computador também pode usar um endereço de WebAPI próprio. O WebAPI precisa estar habilitado no Veyon.
+## Catálogo e deploy de software
+
+O catálogo é criado pela migração do banco e recebe um software de exemplo na primeira inicialização. Configure `LOCAL_NETWORK_CIDRS` no `.env` com uma ou mais redes separadas por vírgulas em formato CIDR para selecionar `url_local`; alvos fora dessas redes usam `url_publica`. Sem redes configuradas, o painel usa a URL pública. `SEED_SOFTWARE_LOCAL_URL` e `SEED_SOFTWARE_PUBLIC_URL` podem substituir as URLs da entrada de exemplo.
+
+O endereço padrão do serviço Veyon é `http://localhost:11080`. Defina `VEYON_API_URL` para apontar a um servidor WebAPI proxy. Cada computador também pode usar um endereço de WebAPI próprio. O WebAPI precisa estar habilitado no Veyon.
 
 Na tela de cada computador, use **Ver em tempo real** para iniciar ou parar a transmissão. O painel mantém um WebSocket aberto enquanto a transmissão estiver ativa e solicita novas capturas ao Veyon aproximadamente quatro vezes por segundo.
 
@@ -49,6 +53,12 @@ alembic revision --autogenerate -m "descricao da alteracao"
 
 Ambientes agrupam computadores na navegação lateral e na grade, no estilo de locais/salas do Veyon. Nomes, endereços, observações e associação ao ambiente são persistidos no SQLite. Chaves privadas ficam apenas no navegador durante o login; sessões WebAPI ficam em memória e precisam ser refeitas após reiniciar o painel.
 
+Para habilitar execução remota de scripts, configure `PANEL_PUBLIC_BASE_URL` com a URL alcançável pelos computadores clientes (incluindo esquema e porta). Os arquivos `.ps1` e `.bat` ficam em `PANEL_UPLOADS_DIR` ou, por padrão, em `data/uploads`. A execução, coleta do log e inventário usam `StartApp` e callbacks autenticados do painel; a URL pública e `X-API-Key` precisam estar acessíveis dos clientes.
+
+As capturas da grade não consultam mais o framebuffer. A captura individual ocorre ao abrir o detalhe ou clicar em Atualizar; a transmissão ao vivo só consulta enquanto “Ver em tempo real” estiver ligado. `VEYON_LIVE_FRAME_INTERVAL_SECONDS` ajusta o intervalo da transmissão (mínimo de 2 segundos).
+
+O endpoint de execução aguarda o callback final dos scripts por até `SCRIPT_EXECUTION_TIMEOUT_SECONDS` (padrão de 300 segundos). O resultado inclui código de saída e saída padrão/erro; em timeout, o painel orienta consultar **Ver Log**.
+
 ## Rotas
 
 | Método | Rota | Uso |
@@ -65,5 +75,9 @@ Ambientes agrupam computadores na navegação lateral e na grade, no estilo de l
 | GET/PUT | `/api/connections/{id}/features/{uuid}` | Consultar e controlar recurso |
 | GET | `/api/connections/{id}/user` | Informações do usuário |
 | GET | `/api/connections/{id}/session` | Informações da sessão |
+| POST/GET | `/api/scripts/upload`, `/api/scripts` | Enviar e listar scripts `.ps1`/`.bat` |
+| POST | `/api/scripts/execute` | Executar em lotes nos IPs selecionados |
+| GET | `/api/scripts/log/{ip}` | Coletar log remoto |
+| GET | `/api/inventory/{ip}` | Coletar inventário do registro do Windows |
 
 Referência: [documentação oficial da Veyon WebAPI](https://docs.veyon.io/en/latest/developer/webapi.html).
